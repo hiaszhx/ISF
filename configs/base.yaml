@@ -1,0 +1,28 @@
+seed: 42
+experiment:
+  task: fusion   # image | spectrum | fusion
+  output_dir: outputs
+  run_name: baseline
+
+data:
+  root_dir: datasets
+  image_extensions: [".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"]
+  image_size: 64
+  spectrum_length: 512
+  val_ratio: 0.2
+  test_ratio: 0.1
+  strict_pair: false
+
+train:
+  epochs: 30
+  batch_size: 32
+  num_workers: 0
+  lr: 0.001
+  weight_decay: 0.0001
+  device: auto
+
+model:
+  image_model: simple_cnn      # simple_cnn | resnet18
+  spectrum_model: spectrum_cnn # spectrum_cnn | spectrum_mlp
+  fusion_model: concat_fusion
+  num_classes: auto

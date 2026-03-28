@@ -1,0 +1,4 @@
+安装依赖：pip install -r requirements.txt
+图像实验：python train.py --config configs/base.yaml --task image
+光谱实验：python train.py --config configs/base.yaml --task spectrum
+融合实验：python train.py --config configs/base.yaml --task fusion
