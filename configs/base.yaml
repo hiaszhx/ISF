@@ -13,11 +13,11 @@ data:
   test_ratio: 0.1
   strict_pair: false
   split:
-    mode: time_order           # time_order | stratified_random
+    mode: stratified_random           # time_order | stratified_random
     shuffle_before_split: false # mode=time_order 时: true=先打乱再分配, false=按时间直接分配
 
 train:
-  epochs: 100
+  epochs: 50
   batch_size: 32
   num_workers: 4
   lr: 0.0001
@@ -25,7 +25,7 @@ train:
   device: auto
 
 model:
-  image_model: simple_cnn      # simple_cnn | resnet18 | mobilenetv2
+  image_model: simple_cnn      # simple_cnn | resnet18 | mobilenetv2 | image_attn
   spectrum_model: spectrum_cnn # spectrum_cnn | spectrum_mlp | spectranet_attn
   fusion_model: concat_fusion
   num_classes: auto
