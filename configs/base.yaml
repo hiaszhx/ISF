@@ -19,13 +19,13 @@ data:
 train:
   epochs: 100
   batch_size: 32
-  num_workers: 0
+  num_workers: 4
   lr: 0.0001
   weight_decay: 0.0001
   device: auto
 
 model:
   image_model: simple_cnn      # simple_cnn | resnet18 | mobilenetv2
-  spectrum_model: spectrum_cnn # spectrum_cnn | spectrum_mlp
+  spectrum_model: spectrum_cnn # spectrum_cnn | spectrum_mlp | spectranet_attn
   fusion_model: concat_fusion
   num_classes: auto

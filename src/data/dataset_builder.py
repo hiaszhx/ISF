@@ -169,11 +169,13 @@ class SpectrumOnlyDataset(Dataset):
         df = pd.read_csv(path)
         arr = df.iloc[:, 1].to_numpy(dtype=np.float32)
 
-        if len(arr) >= self.spectrum_length:
-            arr = arr[: self.spectrum_length]
-        else:
-            pad = np.zeros((self.spectrum_length - len(arr),), dtype=np.float32)
-            arr = np.concatenate([arr, pad], axis=0)
+        if len(arr) != self.spectrum_length:
+            # 原始数据的 x 坐标
+            x_old = np.linspace(0, 1, len(arr))
+            # 目标长度的 x 坐标
+            x_new = np.linspace(0, 1, self.spectrum_length)
+            # 通过线性插值得到新的 512 长度光谱
+            arr = np.interp(x_new, x_old, arr).astype(np.float32)
 
         mean = arr.mean() if arr.size > 0 else 0.0
         std = arr.std() if arr.size > 0 else 1.0
@@ -216,11 +218,13 @@ class FusionDataset(Dataset):
         df = pd.read_csv(path)
         arr = df.iloc[:, 1].to_numpy(dtype=np.float32)
 
-        if len(arr) >= self.spectrum_length:
-            arr = arr[: self.spectrum_length]
-        else:
-            pad = np.zeros((self.spectrum_length - len(arr),), dtype=np.float32)
-            arr = np.concatenate([arr, pad], axis=0)
+        if len(arr) != self.spectrum_length:
+            # 原始数据的 x 坐标
+            x_old = np.linspace(0, 1, len(arr))
+            # 目标长度的 x 坐标
+            x_new = np.linspace(0, 1, self.spectrum_length)
+            # 通过线性插值得到新的 512 长度光谱
+            arr = np.interp(x_new, x_old, arr).astype(np.float32)
 
         mean = arr.mean() if arr.size > 0 else 0.0
         std = arr.std() if arr.size > 0 else 1.0
