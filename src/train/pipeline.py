@@ -20,6 +20,7 @@ from src.train.trainer import (
     build_confusion_matrix,
     evaluate_model,
     save_confusion_matrix_figure,
+    save_results_figure,
     train_model,
 )
 from src.utils.config import ensure_dir, get_class_names
@@ -66,11 +67,15 @@ def run_experiment(cfg: Dict, train_cfg: Dict, model_cfg: Dict, seed: int, outpu
         strict_pair=cfg.get("strict_pair", False),
     )
 
+    split_cfg = cfg.get("split", {})
+
     train_samples, val_samples, test_samples = split_samples(
         samples,
         val_ratio=cfg["val_ratio"],
         test_ratio=cfg["test_ratio"],
         seed=seed,
+        split_mode=split_cfg.get("mode", "time_order"),
+        shuffle_before_split=split_cfg.get("shuffle_before_split", False),
     )
 
     task = model_cfg["task"]
@@ -112,6 +117,8 @@ def run_experiment(cfg: Dict, train_cfg: Dict, model_cfg: Dict, seed: int, outpu
 
     save_dir = ensure_dir(Path(output_dir or "outputs") / run_name / task)
     cm = build_confusion_matrix(y_true, y_pred, num_classes)
-    save_confusion_matrix_figure(cm, class_names, save_dir / "confusion_matrix.png", normalize=True)
+    save_confusion_matrix_figure(cm, class_names, save_dir / "confusion_matrix.png", normalize=False)
+    save_confusion_matrix_figure(cm, class_names, save_dir / "confusion_matrix_normalized.png", normalize=True)
+    save_results_figure(train_result.history, save_dir / "results.png")
 
     return train_result, test_loss, test_acc, save_dir

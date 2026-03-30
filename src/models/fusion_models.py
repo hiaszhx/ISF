@@ -4,14 +4,27 @@ import torch
 import torch.nn as nn
 
 
+def _get_feature_dim(model: nn.Module, branch_name: str) -> int:
+    if not hasattr(model, "forward_features"):
+        raise ValueError(f"{branch_name} model must implement forward_features for fusion")
+
+    feature_dim = getattr(model, "feature_dim", None)
+    if not isinstance(feature_dim, int) or feature_dim <= 0:
+        raise ValueError(
+            f"{branch_name} model must define a positive integer feature_dim for fusion extensibility"
+        )
+
+    return feature_dim
+
+
 class ConcatFusion(nn.Module):
     def __init__(self, image_model: nn.Module, spectrum_model: nn.Module, num_classes: int):
         super().__init__()
         self.image_model = image_model
         self.spectrum_model = spectrum_model
 
-        self.image_feat_dim = 512 if hasattr(image_model, "model") else 128
-        self.spec_feat_dim = 128 if hasattr(spectrum_model, "net") and spectrum_model.__class__.__name__ == "SpectrumMLP" else 64
+        self.image_feat_dim = _get_feature_dim(image_model, "image")
+        self.spec_feat_dim = _get_feature_dim(spectrum_model, "spectrum")
 
         self.fusion_head = nn.Sequential(
             nn.Linear(self.image_feat_dim + self.spec_feat_dim, 256),

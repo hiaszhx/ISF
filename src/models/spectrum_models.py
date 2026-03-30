@@ -7,6 +7,7 @@ import torch.nn as nn
 class SpectrumMLP(nn.Module):
     def __init__(self, input_dim: int, num_classes: int):
         super().__init__()
+        self.feature_dim = 128
         self.net = nn.Sequential(
             nn.Linear(input_dim, 256),
             nn.ReLU(inplace=True),
@@ -14,7 +15,7 @@ class SpectrumMLP(nn.Module):
             nn.Linear(256, 128),
             nn.ReLU(inplace=True),
         )
-        self.classifier = nn.Linear(128, num_classes)
+        self.classifier = nn.Linear(self.feature_dim, num_classes)
 
     def forward_features(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x)
@@ -26,6 +27,7 @@ class SpectrumMLP(nn.Module):
 class SpectrumCNN(nn.Module):
     def __init__(self, input_dim: int, num_classes: int):
         super().__init__()
+        self.feature_dim = 64
         self.net = nn.Sequential(
             nn.Conv1d(1, 16, kernel_size=5, padding=2),
             nn.ReLU(inplace=True),
@@ -37,7 +39,7 @@ class SpectrumCNN(nn.Module):
             nn.ReLU(inplace=True),
             nn.AdaptiveAvgPool1d(1),
         )
-        self.classifier = nn.Linear(64, num_classes)
+        self.classifier = nn.Linear(self.feature_dim, num_classes)
 
     def forward_features(self, x: torch.Tensor) -> torch.Tensor:
         x = x.unsqueeze(1)

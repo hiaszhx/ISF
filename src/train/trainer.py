@@ -198,3 +198,41 @@ def save_confusion_matrix_figure(
     fig.tight_layout()
     fig.savefig(save_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
+
+
+def save_results_figure(history: Dict[str, list], save_path: str | Path) -> None:
+    save_path = Path(save_path)
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+
+    train_loss = history.get("train_loss", [])
+    val_loss = history.get("val_loss", [])
+    train_acc = history.get("train_acc", [])
+    val_acc = history.get("val_acc", [])
+
+    epochs = np.arange(1, len(train_loss) + 1)
+    if len(epochs) == 0:
+        return
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+    axes[0].plot(epochs, train_loss, marker="o", label="train_loss")
+    axes[0].plot(epochs, val_loss, marker="o", label="val_loss")
+    axes[0].set_title("Loss")
+    axes[0].set_xlabel("Epoch")
+    axes[0].set_ylabel("Loss")
+    axes[0].grid(True, alpha=0.3)
+    axes[0].legend()
+
+    axes[1].plot(epochs, train_acc, marker="o", label="train_acc")
+    axes[1].plot(epochs, val_acc, marker="o", label="val_acc")
+    axes[1].set_title("Accuracy")
+    axes[1].set_xlabel("Epoch")
+    axes[1].set_ylabel("Accuracy")
+    axes[1].set_ylim(0.0, 1.0)
+    axes[1].grid(True, alpha=0.3)
+    axes[1].legend()
+
+    fig.suptitle("Training Results")
+    fig.tight_layout()
+    fig.savefig(save_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)

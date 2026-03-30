@@ -73,27 +73,58 @@ def split_samples(
     val_ratio: float,
     test_ratio: float,
     seed: int,
+    split_mode: str = "time_order",
+    shuffle_before_split: bool = False,
 ) -> Tuple[List[SampleItem], List[SampleItem], List[SampleItem]]:
-    labels = [s.label for s in samples]
+    if split_mode in {"time_order", "temporal"}:
+        from collections import defaultdict
 
-    train_samples, test_samples = train_test_split(
-        samples,
-        test_size=test_ratio,
-        random_state=seed,
-        stratify=labels,
-    )
+        class_samples = defaultdict(list)
+        for s in samples:
+            class_samples[s.label].append(s)
 
-    train_labels = [s.label for s in train_samples]
-    val_size = val_ratio / (1.0 - test_ratio)
+        rng = np.random.default_rng(seed)
+        train_samples, val_samples, test_samples = [], [], []
 
-    train_samples, val_samples = train_test_split(
-        train_samples,
-        test_size=val_size,
-        random_state=seed,
-        stratify=train_labels,
-    )
+        for _, items in class_samples.items():
+            items = sorted(items, key=lambda x: x.sample_id)
+            if shuffle_before_split:
+                rng.shuffle(items)
 
-    return train_samples, val_samples, test_samples
+            n = len(items)
+            test_size = int(n * test_ratio)
+            val_size = int(n * val_ratio)
+            train_size = n - test_size - val_size
+
+            train_samples.extend(items[:train_size])
+            val_samples.extend(items[train_size : train_size + val_size])
+            test_samples.extend(items[train_size + val_size :])
+
+        return train_samples, val_samples, test_samples
+
+    if split_mode in {"stratified_random", "random"}:
+        labels = [s.label for s in samples]
+
+        train_samples, test_samples = train_test_split(
+            samples,
+            test_size=test_ratio,
+            random_state=seed,
+            stratify=labels,
+        )
+
+        train_labels = [s.label for s in train_samples]
+        val_size = val_ratio / (1.0 - test_ratio)
+
+        train_samples, val_samples = train_test_split(
+            train_samples,
+            test_size=val_size,
+            random_state=seed,
+            stratify=train_labels,
+        )
+
+        return train_samples, val_samples, test_samples
+
+    raise ValueError(f"Unsupported split_mode: {split_mode}")
 
 
 class ImageOnlyDataset(Dataset):

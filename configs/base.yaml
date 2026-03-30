@@ -12,17 +12,20 @@ data:
   val_ratio: 0.2
   test_ratio: 0.1
   strict_pair: false
+  split:
+    mode: time_order           # time_order | stratified_random
+    shuffle_before_split: false # mode=time_order 时: true=先打乱再分配, false=按时间直接分配
 
 train:
-  epochs: 30
+  epochs: 100
   batch_size: 32
   num_workers: 0
-  lr: 0.001
+  lr: 0.0001
   weight_decay: 0.0001
   device: auto
 
 model:
-  image_model: simple_cnn      # simple_cnn | resnet18
+  image_model: simple_cnn      # simple_cnn | resnet18 | mobilenetv2
   spectrum_model: spectrum_cnn # spectrum_cnn | spectrum_mlp
   fusion_model: concat_fusion
   num_classes: auto

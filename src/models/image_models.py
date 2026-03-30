@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torchvision import models
 
 
 class SimpleCNN(nn.Module):
     def __init__(self, num_classes: int):
         super().__init__()
+        self.feature_dim = 128
         self.features = nn.Sequential(
             nn.Conv2d(3, 32, kernel_size=3, padding=1),
             nn.ReLU(inplace=True),
@@ -19,7 +21,7 @@ class SimpleCNN(nn.Module):
             nn.ReLU(inplace=True),
             nn.AdaptiveAvgPool2d((1, 1)),
         )
-        self.classifier = nn.Linear(128, num_classes)
+        self.classifier = nn.Linear(self.feature_dim, num_classes)
 
     def forward_features(self, x: torch.Tensor) -> torch.Tensor:
         x = self.features(x)
@@ -35,6 +37,7 @@ class ResNet18Classifier(nn.Module):
         super().__init__()
         m = models.resnet18(weights=None)
         in_f = m.fc.in_features
+        self.feature_dim = in_f
         m.fc = nn.Linear(in_f, num_classes)
         self.model = m
 
@@ -56,10 +59,32 @@ class ResNet18Classifier(nn.Module):
         return self.model.fc(feat)
 
 
+class MobileNetV2Classifier(nn.Module):
+    def __init__(self, num_classes: int):
+        super().__init__()
+        m = models.mobilenet_v2(weights=None)
+        in_f = m.classifier[1].in_features
+        self.feature_dim = in_f
+        m.classifier[1] = nn.Linear(in_f, num_classes)
+        self.model = m
+
+    def forward_features(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.model.features(x)
+        x = F.adaptive_avg_pool2d(x, (1, 1))
+        x = torch.flatten(x, 1)
+        return x
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        feat = self.forward_features(x)
+        return self.model.classifier(feat)
+
+
 def build_image_model(name: str, num_classes: int) -> nn.Module:
     name = name.lower()
     if name == "simple_cnn":
         return SimpleCNN(num_classes)
     if name == "resnet18":
         return ResNet18Classifier(num_classes)
+    if name in {"mobilenetv2", "mobilenet_v2"}:
+        return MobileNetV2Classifier(num_classes)
     raise ValueError(f"Unsupported image model: {name}")

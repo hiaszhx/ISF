@@ -3,3 +3,8 @@
 
 # 忽略所有的 PNG 图片文件
 *.png
+
+*.zip
+*.exe
+datasets/Readme.txt
+SpectraNetWithAttention.py
