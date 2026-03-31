@@ -8,7 +8,7 @@ data:
   root_dir: datasets
   image_extensions: [".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"]
   image_size: 64
-  spectrum_length: 512
+  spectrum_length: 1800
   val_ratio: 0.2
   test_ratio: 0.1
   strict_pair: false
@@ -25,7 +25,7 @@ train:
   device: auto
 
 model:
-  image_model: simple_cnn      # simple_cnn | resnet18 | mobilenetv2 | image_attn
-  spectrum_model: spectrum_cnn # spectrum_cnn | spectrum_mlp | spectranet_attn
-  fusion_model: concat_fusion
+  image_model: image_attn      # simple_cnn | resnet18 | mobilenetv2 | image_attn
+  spectrum_model: spectranet_attn # spectrum_cnn | spectrum_mlp | spectranet_attn
+  fusion_model: cross_attention_fusion # concat_fusion | cross_attention_fusion
   num_classes: auto

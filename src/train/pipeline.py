@@ -4,6 +4,8 @@ from pathlib import Path
 from typing import Dict
 
 import torch
+import pandas as pd
+import yaml
 from torch.utils.data import DataLoader
 
 from src.data.dataset_builder import (
@@ -58,7 +60,75 @@ def prepare_datasets(cfg: Dict, task: str, samples, train_samples, val_samples, 
     return train_ds, val_ds, test_ds
 
 
-def run_experiment(cfg: Dict, train_cfg: Dict, model_cfg: Dict, seed: int, output_dir: str | Path | None = None, run_name: str = "run"):
+def save_experiment_config_snapshot(
+    save_dir: Path,
+    cfg: Dict,
+    train_cfg: Dict,
+    model_cfg: Dict,
+    seed: int,
+    run_name: str,
+    test_loss: float,
+    test_acc: float,
+    best_val_acc: float,
+    full_cfg: Dict | None = None,
+) -> None:
+    split_cfg = cfg.get("split", {})
+    snapshot = {
+        "run": {
+            "run_name": run_name,
+            "task": model_cfg.get("task"),
+            "seed": seed,
+        },
+        "data": {
+            "root_dir": cfg.get("root_dir"),
+            "image_size": cfg.get("image_size"),
+            "spectrum_length": cfg.get("spectrum_length"),
+            "val_ratio": cfg.get("val_ratio"),
+            "test_ratio": cfg.get("test_ratio"),
+            "strict_pair": cfg.get("strict_pair"),
+            "split": {
+                "mode": split_cfg.get("mode", "time_order"),
+                "shuffle_before_split": split_cfg.get("shuffle_before_split", False),
+            },
+        },
+        "model": {
+            "image_model": model_cfg.get("image_model"),
+            "spectrum_model": model_cfg.get("spectrum_model"),
+            "fusion_model": model_cfg.get("fusion_model"),
+            "num_classes": model_cfg.get("num_classes"),
+        },
+        "train": {
+            "epochs": train_cfg.get("epochs"),
+            "batch_size": train_cfg.get("batch_size"),
+            "num_workers": train_cfg.get("num_workers"),
+            "lr": train_cfg.get("lr"),
+            "weight_decay": train_cfg.get("weight_decay"),
+            "device": train_cfg.get("device"),
+        },
+        "result": {
+            "best_val_acc": float(best_val_acc),
+            "test_loss": float(test_loss),
+            "test_acc": float(test_acc),
+        },
+    }
+
+    if full_cfg is not None:
+        snapshot["full_config"] = full_cfg
+
+    config_path = save_dir / "experiment_config.yaml"
+    with config_path.open("w", encoding="utf-8") as f:
+        yaml.safe_dump(snapshot, f, allow_unicode=True, sort_keys=False)
+
+
+def run_experiment(
+    cfg: Dict,
+    train_cfg: Dict,
+    model_cfg: Dict,
+    seed: int,
+    output_dir: str | Path | None = None,
+    run_name: str = "run",
+    full_cfg: Dict | None = None,
+):
     data_root = cfg["root_dir"]
     class_names = get_class_names(data_root)
     samples, _ = build_samples(
@@ -79,6 +149,17 @@ def run_experiment(cfg: Dict, train_cfg: Dict, model_cfg: Dict, seed: int, outpu
     )
 
     task = model_cfg["task"]
+
+    if task in ["spectrum", "fusion"]:
+        # 找到第一个包含光谱路径的样本
+        for s in samples:
+            if s.spectrum_path is not None:
+                # 读取该样本的原始光谱长度
+                df = pd.read_csv(s.spectrum_path)
+                orig_len = len(df.iloc[:, 1])
+                target_len = cfg["spectrum_length"]
+                print(f"\n[*] 训练初始化: 光谱长度将由 {orig_len} 转换为目标长度 {target_len}\n")
+                break
 
     train_ds, val_ds, test_ds = prepare_datasets(cfg, task, samples, train_samples, val_samples, test_samples)
 
@@ -120,5 +201,17 @@ def run_experiment(cfg: Dict, train_cfg: Dict, model_cfg: Dict, seed: int, outpu
     save_confusion_matrix_figure(cm, class_names, save_dir / "confusion_matrix.png", normalize=False)
     save_confusion_matrix_figure(cm, class_names, save_dir / "confusion_matrix_normalized.png", normalize=True)
     save_results_figure(train_result.history, save_dir / "results.png")
+    save_experiment_config_snapshot(
+        save_dir=save_dir,
+        cfg=cfg,
+        train_cfg=train_cfg,
+        model_cfg=model_cfg,
+        seed=seed,
+        run_name=run_name,
+        test_loss=test_loss,
+        test_acc=test_acc,
+        best_val_acc=train_result.best_val_acc,
+        full_cfg=full_cfg,
+    )
 
     return train_result, test_loss, test_acc, save_dir
