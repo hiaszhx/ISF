@@ -17,6 +17,7 @@ from tqdm import tqdm
 class TrainResult:
     best_val_acc: float
     history: Dict[str, list]
+    best_state_dict: Dict | None = None
 
 
 def accuracy(logits: torch.Tensor, labels: torch.Tensor) -> float:
@@ -69,8 +70,11 @@ def train_model(
 
     print(f"[*] 优化器: {optimizer_name.upper()}  调度器: {scheduler_name}")
 
+    import copy
+
     history = {"train_loss": [], "train_acc": [], "val_loss": [], "val_acc": []}
     best_val_acc = 0.0
+    best_state_dict = None
 
     for epoch in range(1, epochs + 1):
         print(f"\n[Epoch {epoch}/{epochs}]")
@@ -107,7 +111,9 @@ def train_model(
         history["val_loss"].append(val_loss)
         history["val_acc"].append(val_acc)
 
-        best_val_acc = max(best_val_acc, val_acc)
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            best_state_dict = copy.deepcopy(model.state_dict())
         current_lr = optimizer.param_groups[0]["lr"]
 
         print(
@@ -117,7 +123,7 @@ def train_model(
             f"best_val_acc={best_val_acc:.4f}, lr={current_lr:.2e}"
         )
 
-    return TrainResult(best_val_acc=best_val_acc, history=history)
+    return TrainResult(best_val_acc=best_val_acc, history=history, best_state_dict=best_state_dict)
 
 
 def evaluate_model(model: nn.Module, loader: DataLoader, device: torch.device) -> Tuple[float, float, List[int], List[int]]:

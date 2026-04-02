@@ -200,6 +200,13 @@ def run_experiment(
         scheduler_params=train_cfg.get("scheduler_params"),
     )
 
+    test_weights = train_cfg.get("test_weights", "best")
+    if test_weights == "best" and train_result.best_state_dict is not None:
+        model.load_state_dict(train_result.best_state_dict)
+        print(f"\n[*] 使用验证集最优权重进行测试 (best_val_acc={train_result.best_val_acc:.4f})")
+    else:
+        print("\n[*] 使用最后一轮权重进行测试")
+
     test_loss, test_acc, y_pred, y_true = evaluate_model(model, loaders["test"], device)
 
     save_dir = ensure_dir(Path(output_dir or "outputs") / run_name / task)
