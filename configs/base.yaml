@@ -23,9 +23,18 @@ train:
   lr: 0.0001
   weight_decay: 0.0001
   device: auto
+  optimizer: adam          # adam | adamw
+  scheduler: none         # none | cosine | plateau | step
+  scheduler_params:
+    T_max: auto             # cosine: 周期epoch数，auto=自动等于epochs
+    eta_min: 0.000001       # cosine: 最低学习率
+    factor: 0.5             # plateau: 学习率缩减倍率
+    patience: 5             # plateau: 等待epoch数
+    step_size: 10           # step: 每隔step_size个epoch降一次
+    gamma: 0.5              # step: 衰减系数
 
 model:
   image_model: image_attn      # simple_cnn | resnet18 | mobilenetv2 | image_attn
-  spectrum_model: spectranet_attn # spectrum_cnn | spectrum_mlp | spectranet_attn
+  spectrum_model: gadf_cnn_64 # spectrum_cnn | spectrum_mlp | spectranet_attn | gadf_cnn_64 | gadf_cnn_128
   fusion_model: cross_attention_fusion # concat_fusion | cross_attention_fusion
   num_classes: auto

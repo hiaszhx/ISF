@@ -32,9 +32,42 @@ def train_model(
     epochs: int,
     lr: float,
     weight_decay: float,
+    optimizer_name: str = "adamw",
+    scheduler_name: str = "cosine",
+    scheduler_params: Dict | None = None,
 ) -> TrainResult:
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+
+    if optimizer_name == "adamw":
+        optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    else:
+        optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+
+    sp = scheduler_params or {}
+    t_max_val = sp.get("T_max", "auto")
+    t_max = epochs if t_max_val == "auto" else int(t_max_val)
+    if scheduler_name == "cosine":
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=t_max,
+            eta_min=sp.get("eta_min", 1e-6),
+        )
+    elif scheduler_name == "plateau":
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            factor=sp.get("factor", 0.5),
+            patience=sp.get("patience", 5),
+        )
+    elif scheduler_name == "step":
+        scheduler = torch.optim.lr_scheduler.StepLR(
+            optimizer,
+            step_size=sp.get("step_size", 10),
+            gamma=sp.get("gamma", 0.5),
+        )
+    else:
+        scheduler = None
+
+    print(f"[*] 优化器: {optimizer_name.upper()}  调度器: {scheduler_name}")
 
     history = {"train_loss": [], "train_acc": [], "val_loss": [], "val_acc": []}
     best_val_acc = 0.0
@@ -63,18 +96,25 @@ def train_model(
             total_epochs=epochs,
         )
 
+        if scheduler is not None:
+            if scheduler_name == "plateau":
+                scheduler.step(val_loss)
+            else:
+                scheduler.step()
+
         history["train_loss"].append(train_loss)
         history["train_acc"].append(train_acc)
         history["val_loss"].append(val_loss)
         history["val_acc"].append(val_acc)
 
         best_val_acc = max(best_val_acc, val_acc)
+        current_lr = optimizer.param_groups[0]["lr"]
 
         print(
             f"Epoch {epoch}/{epochs} | "
             f"train_loss={train_loss:.4f}, train_acc={train_acc:.4f}, "
             f"val_loss={val_loss:.4f}, val_acc={val_acc:.4f}, "
-            f"best_val_acc={best_val_acc:.4f}"
+            f"best_val_acc={best_val_acc:.4f}, lr={current_lr:.2e}"
         )
 
     return TrainResult(best_val_acc=best_val_acc, history=history)

@@ -104,6 +104,9 @@ def save_experiment_config_snapshot(
             "lr": train_cfg.get("lr"),
             "weight_decay": train_cfg.get("weight_decay"),
             "device": train_cfg.get("device"),
+            "optimizer": train_cfg.get("optimizer", "adamw"),
+            "scheduler": train_cfg.get("scheduler", "cosine"),
+            "scheduler_params": train_cfg.get("scheduler_params"),
         },
         "result": {
             "best_val_acc": float(best_val_acc),
@@ -192,6 +195,9 @@ def run_experiment(
         epochs=train_cfg["epochs"],
         lr=train_cfg["lr"],
         weight_decay=train_cfg["weight_decay"],
+        optimizer_name=train_cfg.get("optimizer", "adamw"),
+        scheduler_name=train_cfg.get("scheduler", "cosine"),
+        scheduler_params=train_cfg.get("scheduler_params"),
     )
 
     test_loss, test_acc, y_pred, y_true = evaluate_model(model, loaders["test"], device)
