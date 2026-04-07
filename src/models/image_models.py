@@ -56,7 +56,8 @@ class SimpleCNN(nn.Module):
 class ResNet18Classifier(nn.Module):
     def __init__(self, num_classes: int):
         super().__init__()
-        m = models.resnet18(weights=None)
+        # m = models.resnet18(weights=None)
+        m = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
         in_f = m.fc.in_features
         self.feature_dim = in_f
         m.fc = nn.Linear(in_f, num_classes)
@@ -83,7 +84,8 @@ class ResNet18Classifier(nn.Module):
 class MobileNetV2Classifier(nn.Module):
     def __init__(self, num_classes: int):
         super().__init__()
-        m = models.mobilenet_v2(weights=None)
+        # m = models.mobilenet_v2(weights=None)
+        m = models.mobilenet_v2(weights=models.MobileNet_V2_Weights.DEFAULT)
         in_f = m.classifier[1].in_features
         self.feature_dim = in_f
         m.classifier[1] = nn.Linear(in_f, num_classes)

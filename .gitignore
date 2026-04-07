@@ -8,3 +8,4 @@
 *.exe
 datasets/Readme.txt
 SpectraNetWithAttention.py
+outputs

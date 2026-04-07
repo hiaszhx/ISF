@@ -11,15 +11,15 @@ data:
   spectrum_length: 1800
   val_ratio: 0.2
   test_ratio: 0.1
-  strict_pair: false
+  strict_pair: true
   split:
-    mode: stratified_random           # time_order | stratified_random
+    mode: time_order           # time_order | stratified_random
     shuffle_before_split: false # mode=time_order 时: true=先打乱再分配, false=按时间直接分配
 
 train:
   epochs: 100
   batch_size: 32
-  num_workers: 4
+  num_workers: 8
   lr: 0.0001
   weight_decay: 0.0001
   device: auto
@@ -35,7 +35,7 @@ train:
     gamma: 0.5              # step: 衰减系数
 
 model:
-  image_model: image_attn      # simple_cnn | resnet18 | mobilenetv2 | image_attn
+  image_model: mobilenetv2      # simple_cnn | resnet18 | mobilenetv2 | image_attn
   spectrum_model: gadf_cnn_64 # spectrum_cnn | spectrum_mlp | spectranet_attn | gadf_cnn_64 | gadf_cnn_128
   fusion_model: cross_attention_fusion # concat_fusion | cross_attention_fusion
   num_classes: auto
