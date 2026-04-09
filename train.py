@@ -41,7 +41,6 @@ def main():
         seed,
         output_dir=exp_cfg.get("output_dir", "outputs"),
         run_name=exp_cfg.get("run_name", "run"),
-        full_cfg=cfg,
     )
 
     print("=" * 80)

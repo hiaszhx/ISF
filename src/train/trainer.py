@@ -16,8 +16,11 @@ from tqdm import tqdm
 @dataclass
 class TrainResult:
     best_val_acc: float
+    best_val_loss: float
     history: Dict[str, list]
     best_state_dict: Dict | None = None
+    best_loss_state_dict: Dict | None = None
+    last_state_dict: Dict | None = None
 
 
 def accuracy(logits: torch.Tensor, labels: torch.Tensor) -> float:
@@ -36,8 +39,11 @@ def train_model(
     optimizer_name: str = "adamw",
     scheduler_name: str = "cosine",
     scheduler_params: Dict | None = None,
+    label_smoothing: float = 0.0,
 ) -> TrainResult:
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
+    if label_smoothing > 0:
+        print(f"[*] Label Smoothing: {label_smoothing}")
 
     if optimizer_name == "adamw":
         optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
@@ -74,7 +80,9 @@ def train_model(
 
     history = {"train_loss": [], "train_acc": [], "val_loss": [], "val_acc": []}
     best_val_acc = 0.0
+    best_val_loss = float("inf")
     best_state_dict = None
+    best_loss_state_dict = None
 
     for epoch in range(1, epochs + 1):
         print(f"\n[Epoch {epoch}/{epochs}]")
@@ -114,16 +122,28 @@ def train_model(
         if val_acc > best_val_acc:
             best_val_acc = val_acc
             best_state_dict = copy.deepcopy(model.state_dict())
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            best_loss_state_dict = copy.deepcopy(model.state_dict())
         current_lr = optimizer.param_groups[0]["lr"]
 
         print(
             f"Epoch {epoch}/{epochs} | "
             f"train_loss={train_loss:.4f}, train_acc={train_acc:.4f}, "
             f"val_loss={val_loss:.4f}, val_acc={val_acc:.4f}, "
-            f"best_val_acc={best_val_acc:.4f}, lr={current_lr:.2e}"
+            f"best_val_acc={best_val_acc:.4f}, best_val_loss={best_val_loss:.4f}, lr={current_lr:.2e}"
         )
 
-    return TrainResult(best_val_acc=best_val_acc, history=history, best_state_dict=best_state_dict)
+    last_state_dict = copy.deepcopy(model.state_dict())
+
+    return TrainResult(
+        best_val_acc=best_val_acc,
+        best_val_loss=best_val_loss,
+        history=history,
+        best_state_dict=best_state_dict,
+        best_loss_state_dict=best_loss_state_dict,
+        last_state_dict=last_state_dict,
+    )
 
 
 def evaluate_model(model: nn.Module, loader: DataLoader, device: torch.device) -> Tuple[float, float, List[int], List[int]]:

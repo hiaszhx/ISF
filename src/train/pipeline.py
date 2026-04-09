@@ -70,7 +70,7 @@ def save_experiment_config_snapshot(
     test_loss: float,
     test_acc: float,
     best_val_acc: float,
-    full_cfg: Dict | None = None,
+    all_test_results: Dict | None = None,
 ) -> None:
     split_cfg = cfg.get("split", {})
     snapshot = {
@@ -107,6 +107,7 @@ def save_experiment_config_snapshot(
             "optimizer": train_cfg.get("optimizer", "adamw"),
             "scheduler": train_cfg.get("scheduler", "cosine"),
             "scheduler_params": train_cfg.get("scheduler_params"),
+            "label_smoothing": train_cfg.get("label_smoothing", 0.0),
         },
         "result": {
             "best_val_acc": float(best_val_acc),
@@ -115,8 +116,11 @@ def save_experiment_config_snapshot(
         },
     }
 
-    if full_cfg is not None:
-        snapshot["full_config"] = full_cfg
+    if all_test_results:
+        snapshot["all_test_results"] = {
+            k: {kk: float(vv) for kk, vv in v.items()}
+            for k, v in all_test_results.items()
+        }
 
     config_path = save_dir / "experiment_config.yaml"
     with config_path.open("w", encoding="utf-8") as f:
@@ -130,7 +134,6 @@ def run_experiment(
     seed: int,
     output_dir: str | Path | None = None,
     run_name: str = "run",
-    full_cfg: Dict | None = None,
 ):
     data_root = cfg["root_dir"]
     class_names = get_class_names(data_root)
@@ -198,22 +201,52 @@ def run_experiment(
         optimizer_name=train_cfg.get("optimizer", "adamw"),
         scheduler_name=train_cfg.get("scheduler", "cosine"),
         scheduler_params=train_cfg.get("scheduler_params"),
+        label_smoothing=train_cfg.get("label_smoothing", 0.0),
     )
 
-    test_weights = train_cfg.get("test_weights", "best")
-    if test_weights == "best" and train_result.best_state_dict is not None:
-        model.load_state_dict(train_result.best_state_dict)
-        print(f"\n[*] 使用验证集最优权重进行测试 (best_val_acc={train_result.best_val_acc:.4f})")
-    else:
-        print("\n[*] 使用最后一轮权重进行测试")
-
-    test_loss, test_acc, y_pred, y_true = evaluate_model(model, loaders["test"], device)
-
     save_dir = ensure_dir(Path(output_dir or "outputs") / run_name / task)
-    cm = build_confusion_matrix(y_true, y_pred, num_classes)
-    save_confusion_matrix_figure(cm, class_names, save_dir / "confusion_matrix.png", normalize=False)
-    save_confusion_matrix_figure(cm, class_names, save_dir / "confusion_matrix_normalized.png", normalize=True)
+
+    # ---- 保存训练曲线 ----
     save_results_figure(train_result.history, save_dir / "results.png")
+
+    # ---- 对三组权重分别测试 ----
+    weights_to_test = {
+        "best_acc": (train_result.best_state_dict, f"best_val_acc={train_result.best_val_acc:.4f}"),
+        "best_loss": (train_result.best_loss_state_dict, f"best_val_loss={train_result.best_val_loss:.4f}"),
+        "last": (train_result.last_state_dict, "最后一轮权重"),
+    }
+
+    all_test_results = {}
+    for weight_name, (state_dict, desc) in weights_to_test.items():
+        if state_dict is None:
+            print(f"\n权重 '{weight_name}' 不可用，跳过")
+            continue
+        model.load_state_dict(state_dict)
+        print(f"\n测试权重: {weight_name} ({desc})")
+        t_loss, t_acc, y_pred, y_true = evaluate_model(model, loaders["test"], device)
+        print(f"  test_loss={t_loss:.4f}, test_acc={t_acc:.4f}")
+        all_test_results[weight_name] = {"test_loss": t_loss, "test_acc": t_acc}
+
+        # 保存混淆矩阵
+        cm = build_confusion_matrix(y_true, y_pred, num_classes)
+        save_confusion_matrix_figure(cm, class_names, save_dir / f"confusion_matrix_{weight_name}.png", normalize=False)
+        save_confusion_matrix_figure(cm, class_names, save_dir / f"confusion_matrix_{weight_name}_normalized.png", normalize=True)
+
+    # 找出测试准确率最高的权重
+    best_weight = max(all_test_results, key=lambda k: all_test_results[k]["test_acc"])
+    best_info = all_test_results[best_weight]
+    print(f"\n最优测试权重: {best_weight} (test_acc={best_info['test_acc']:.4f}, test_loss={best_info['test_loss']:.4f})")
+
+    # ---- 选择主测试结果（用于 experiment_config） ----
+    primary = train_cfg.get("test_weights", "best")
+    if primary == "best":
+        primary = "best_acc"
+    elif primary == "best_loss":
+        primary = "best_loss"
+    primary_result = all_test_results.get(primary, next(iter(all_test_results.values())))
+    test_loss = primary_result["test_loss"]
+    test_acc = primary_result["test_acc"]
+
     save_experiment_config_snapshot(
         save_dir=save_dir,
         cfg=cfg,
@@ -224,7 +257,7 @@ def run_experiment(
         test_loss=test_loss,
         test_acc=test_acc,
         best_val_acc=train_result.best_val_acc,
-        full_cfg=full_cfg,
+        all_test_results=all_test_results,
     )
 
     return train_result, test_loss, test_acc, save_dir

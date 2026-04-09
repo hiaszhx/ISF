@@ -9,3 +9,11 @@
 datasets/Readme.txt
 SpectraNetWithAttention.py
 outputs
+autoshut.sh
+configs/image64_64.yaml
+configs/image64_128.yaml
+configs/image96_64.yaml
+configs/image96_128.yaml
+configs/image128_64.yaml
+configs/image128_128.yaml
+plot_spectra.py

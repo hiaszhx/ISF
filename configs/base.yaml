@@ -23,7 +23,8 @@ train:
   lr: 0.0001
   weight_decay: 0.0001
   device: auto
-  test_weights: best       # best | last  (best=使用验证集最优权重测试, last=使用最后一轮权重测试)
+  test_weights: best       # best | best_loss | last  (best=最优验证准确率, best_loss=最优验证损失, last=最后一轮)
+  label_smoothing: 0.1     # 标签平滑系数，0.0=不使用
   optimizer: adamw          # adam | adamw
   scheduler: none         # none | cosine | plateau | step
   scheduler_params:
