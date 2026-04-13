@@ -210,6 +210,152 @@ class _SpatialAttention2D(nn.Module):
         return out + x
 
 
+# ---------------------------------------------------------------------------
+# Mamba (Selective State Space Model) — 纯 PyTorch 实现
+# ---------------------------------------------------------------------------
+
+
+class _MambaSSM(nn.Module):
+    """选择性状态空间模型核心。
+
+    实现 Mamba (Gu & Dao, 2023) 的选择性扫描机制。
+    输入依赖的 B, C, dt 使模型能够选择性地保留或遗忘序列信息。
+    """
+
+    def __init__(self, d_inner: int, d_state: int = 16) -> None:
+        super().__init__()
+        self.d_inner = d_inner
+        self.d_state = d_state
+
+        # 可学习 SSM 参数
+        A = torch.arange(1, d_state + 1, dtype=torch.float32)
+        A = A.unsqueeze(0).expand(d_inner, -1).clone()
+        self.A_log = nn.Parameter(torch.log(A))       # (D, N)
+        self.D = nn.Parameter(torch.ones(d_inner))     # (D,) skip
+
+        # 输入依赖投影: dt(D) + B(N) + C(N)
+        self.x_proj = nn.Linear(d_inner, d_inner + d_state * 2, bias=False)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """x: (B, L, D) → (B, L, D)"""
+        B_sz, L, D = x.shape
+        N = self.d_state
+
+        x_proj = self.x_proj(x)                                       # (B, L, D+2N)
+        dt, B_ssm, C_ssm = x_proj.split([D, N, N], dim=-1)
+        dt = F.softplus(dt)                                            # 保证正值
+
+        A = -torch.exp(self.A_log)                                     # (D, N) 负数保持稳定
+
+        # 顺序扫描（特征图 L≤256 时足够高效）
+        h = x.new_zeros(B_sz, D, N)
+        ys = []
+        for t in range(L):
+            dt_t = dt[:, t]                                            # (B, D)
+            A_bar = torch.exp(dt_t.unsqueeze(-1) * A)                  # (B, D, N)
+            B_bar = dt_t.unsqueeze(-1) * B_ssm[:, t].unsqueeze(1)      # (B, D, N)
+            h = A_bar * h + B_bar * x[:, t].unsqueeze(-1)              # (B, D, N)
+            y_t = (h * C_ssm[:, t].unsqueeze(1)).sum(-1)               # (B, D)
+            y_t = y_t + self.D * x[:, t]                               # skip connection
+            ys.append(y_t)
+
+        return torch.stack(ys, dim=1)                                  # (B, L, D)
+
+
+class _MambaBlock(nn.Module):
+    """单个 Mamba 块：LayerNorm → in_proj → [Conv1d + SiLU → SSM] ⊗ [SiLU gate] → out_proj + 残差。"""
+
+    def __init__(self, d_model: int, d_state: int = 16,
+                 d_conv: int = 4, expand: int = 2) -> None:
+        super().__init__()
+        d_inner = d_model * expand
+
+        self.norm = nn.LayerNorm(d_model)
+        self.in_proj = nn.Linear(d_model, d_inner * 2, bias=False)
+
+        # 深度可分离卷积用于局部上下文
+        self.conv1d = nn.Conv1d(
+            d_inner, d_inner,
+            kernel_size=d_conv, padding=d_conv - 1,
+            groups=d_inner, bias=True,
+        )
+
+        self.ssm = _MambaSSM(d_inner, d_state)
+        self.out_proj = nn.Linear(d_inner, d_model, bias=False)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """x: (B, L, D) → (B, L, D)"""
+        residual = x
+        x = self.norm(x)
+
+        xz = self.in_proj(x)                                          # (B, L, 2*D_inner)
+        x_branch, z = xz.chunk(2, dim=-1)
+
+        # 局部卷积分支
+        x_branch = x_branch.transpose(1, 2)                           # (B, D_inner, L)
+        x_branch = self.conv1d(x_branch)[:, :, :residual.size(1)]     # 因果裁剪
+        x_branch = x_branch.transpose(1, 2)
+        x_branch = F.silu(x_branch)
+
+        # 选择性 SSM
+        x_branch = self.ssm(x_branch)
+
+        # 门控输出
+        out = x_branch * F.silu(z)
+        out = self.out_proj(out)
+
+        return out + residual
+
+
+class _SpatialMamba2D(nn.Module):
+    """双向 Mamba 用于 2D 特征图，可替代空间自注意力。
+
+    将 (B, C, H, W) 展平为序列，正向与反向各运行 Mamba 块，
+    合并双向输出后恢复为 2D 特征图。
+    """
+
+    def __init__(self, in_channels: int, d_state: int = 16,
+                 d_conv: int = 4, expand: int = 2,
+                 n_layers: int = 1) -> None:
+        super().__init__()
+        self.fwd_blocks = nn.ModuleList([
+            _MambaBlock(in_channels, d_state, d_conv, expand)
+            for _ in range(n_layers)
+        ])
+        self.bwd_blocks = nn.ModuleList([
+            _MambaBlock(in_channels, d_state, d_conv, expand)
+            for _ in range(n_layers)
+        ])
+        self.merge = nn.Linear(in_channels * 2, in_channels, bias=False)
+        self.norm = nn.LayerNorm(in_channels)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """x: (B, C, H, W) → (B, C, H, W)"""
+        B, C, H, W = x.shape
+
+        # 展平为序列 (B, L, C)，L = H*W
+        seq = x.reshape(B, C, H * W).permute(0, 2, 1)
+
+        # 正向扫描
+        fwd = seq
+        for blk in self.fwd_blocks:
+            fwd = blk(fwd)
+
+        # 反向扫描
+        bwd = seq.flip(1)
+        for blk in self.bwd_blocks:
+            bwd = blk(bwd)
+        bwd = bwd.flip(1)
+
+        # 合并双向
+        merged = self.merge(torch.cat([fwd, bwd], dim=-1))            # (B, L, C)
+        merged = self.norm(merged)
+
+        # 恢复 2D
+        out = merged.permute(0, 2, 1).reshape(B, C, H, W)
+        return out + x                                                 # 残差
+
+
 class GADFSpectrumClassifier(nn.Module):
     """基于 GADF 图像的光谱分类模型。
 
@@ -302,6 +448,115 @@ class GADFSpectrumClassifier(nn.Module):
         return self.classifier(self.forward_features(x))
 
 
+class GADFMambaSpectrumClassifier(nn.Module):
+    """基于 GADF + Mamba 的光谱分类模型。
+
+    用双向 Mamba SSM 替代自注意力层，对 GADF 图像的 CNN 特征进行序列建模。
+    可选保留一个轻量注意力层构成 Mamba+Attention 混合模式。
+
+    Args:
+        input_dim:      原始光谱长度
+        num_classes:    类别数
+        image_size:     GADF 图像边长，64 或 128
+        use_attention:  是否在 Mamba 之后追加空间注意力（混合模式）
+        d_state:        SSM 隐状态维度
+        d_conv:         Mamba 局部卷积核大小
+        expand:         内部维度扩展倍数
+        dropout_rate:   Dropout 比例
+    """
+
+    def __init__(
+        self,
+        input_dim: int,
+        num_classes: int,
+        image_size: int = 64,
+        use_attention: bool = False,
+        d_state: int = 16,
+        d_conv: int = 4,
+        expand: int = 2,
+        dropout_rate: float = 0.3,
+    ) -> None:
+        super().__init__()
+        self.feature_dim = 256
+        self.image_size = image_size
+
+        self.gadf = GADFTransform(image_size)
+
+        # 2D CNN 骨干
+        self.conv1 = nn.Conv2d(1, 64, kernel_size=7, padding=3)
+        self.bn1 = nn.BatchNorm2d(64)
+        self.relu1 = nn.ReLU(inplace=True)
+        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
+
+        self.conv2 = nn.Conv2d(64, 128, kernel_size=5, padding=2)
+        self.bn2 = nn.BatchNorm2d(128)
+        self.relu2 = nn.ReLU(inplace=True)
+        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)
+
+        self.conv3 = nn.Conv2d(128, 256, kernel_size=3, padding=1)
+        self.bn3 = nn.BatchNorm2d(256)
+        self.relu3 = nn.ReLU(inplace=True)
+        self.pool3 = nn.AdaptiveAvgPool2d((8, 8))
+
+        # Mamba 替代自注意力
+        self.mamba = _SpatialMamba2D(
+            in_channels=256, d_state=d_state, d_conv=d_conv, expand=expand,
+        )
+
+        # 可选：Mamba 之后追加一个轻量注意力层（混合模式）
+        self.attention = _SpatialAttention2D(256) if use_attention else None
+
+        # MLP 分类头
+        self.dropout1 = nn.Dropout(dropout_rate)
+        self.fc1 = nn.Linear(256 * 8 * 8, 512)
+        self.bn_fc1 = nn.BatchNorm1d(512)
+        self.relu_fc1 = nn.ReLU(inplace=True)
+
+        self.dropout2 = nn.Dropout(dropout_rate)
+        self.fc2 = nn.Linear(512, self.feature_dim)
+        self.bn_fc2 = nn.BatchNorm1d(self.feature_dim)
+        self.relu_fc2 = nn.ReLU(inplace=True)
+
+        self.dropout3 = nn.Dropout(dropout_rate)
+        self.classifier = nn.Linear(self.feature_dim, num_classes)
+
+        self._initialize_weights()
+
+    def _initialize_weights(self) -> None:
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+            elif isinstance(m, (nn.BatchNorm2d, nn.BatchNorm1d)):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+            elif isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, 0, 0.01)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+
+    def forward_features(self, x: torch.Tensor) -> torch.Tensor:
+        """输入 (B, L) 光谱，输出 (B, feature_dim) 特征向量。"""
+        img = self.gadf(x)                                         # (B, 1, N, N)
+        x = self.pool1(self.relu1(self.bn1(self.conv1(img))))
+        x = self.pool2(self.relu2(self.bn2(self.conv2(x))))
+        x = self.pool3(self.relu3(self.bn3(self.conv3(x))))
+        x = self.mamba(x)
+        if self.attention is not None:
+            x = self.attention(x)
+        x = x.reshape(x.size(0), -1)
+        x = self.dropout1(x)
+        x = self.relu_fc1(self.bn_fc1(self.fc1(x)))
+        x = self.dropout2(x)
+        x = self.relu_fc2(self.bn_fc2(self.fc2(x)))
+        x = self.dropout3(x)
+        return x
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.classifier(self.forward_features(x))
+
+
 def build_spectrum_model(name: str, input_dim: int, num_classes: int) -> nn.Module:
     name = name.lower()
     if name == "spectrum_mlp":
@@ -314,4 +569,12 @@ def build_spectrum_model(name: str, input_dim: int, num_classes: int) -> nn.Modu
         return GADFSpectrumClassifier(input_dim, num_classes, image_size=64)
     if name == "gadf_cnn_128":
         return GADFSpectrumClassifier(input_dim, num_classes, image_size=128)
+    if name == "gadf_mamba_64":
+        return GADFMambaSpectrumClassifier(input_dim, num_classes, image_size=64, use_attention=False)
+    if name == "gadf_mamba_128":
+        return GADFMambaSpectrumClassifier(input_dim, num_classes, image_size=128, use_attention=False)
+    if name == "gadf_mamba_attn_64":
+        return GADFMambaSpectrumClassifier(input_dim, num_classes, image_size=64, use_attention=True)
+    if name == "gadf_mamba_attn_128":
+        return GADFMambaSpectrumClassifier(input_dim, num_classes, image_size=128, use_attention=True)
     raise ValueError(f"Unsupported spectrum model: {name}")
