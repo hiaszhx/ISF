@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict
 
+import numpy as np
 import torch
 import pandas as pd
 import yaml
@@ -41,19 +42,27 @@ def build_loaders(cfg: Dict, samples, batch_size: int, num_workers: int):
 def prepare_datasets(cfg: Dict, task: str, samples, train_samples, val_samples, test_samples):
     image_size = cfg["image_size"]
     spectrum_length = cfg["spectrum_length"]
+    spectrum_left = cfg.get("spectrum_left")
+    spectrum_right = cfg.get("spectrum_right")
 
     if task == "image":
         train_ds = ImageOnlyDataset(train_samples, image_size=image_size, train=True)
         val_ds = ImageOnlyDataset(val_samples, image_size=image_size, train=False)
         test_ds = ImageOnlyDataset(test_samples, image_size=image_size, train=False)
     elif task == "spectrum":
-        train_ds = SpectrumOnlyDataset(train_samples, spectrum_length=spectrum_length)
-        val_ds = SpectrumOnlyDataset(val_samples, spectrum_length=spectrum_length)
-        test_ds = SpectrumOnlyDataset(test_samples, spectrum_length=spectrum_length)
+        train_ds = SpectrumOnlyDataset(train_samples, spectrum_length=spectrum_length,
+                                       spectrum_left=spectrum_left, spectrum_right=spectrum_right)
+        val_ds = SpectrumOnlyDataset(val_samples, spectrum_length=spectrum_length,
+                                     spectrum_left=spectrum_left, spectrum_right=spectrum_right)
+        test_ds = SpectrumOnlyDataset(test_samples, spectrum_length=spectrum_length,
+                                      spectrum_left=spectrum_left, spectrum_right=spectrum_right)
     elif task == "fusion":
-        train_ds = FusionDataset(train_samples, image_size=image_size, spectrum_length=spectrum_length, train=True)
-        val_ds = FusionDataset(val_samples, image_size=image_size, spectrum_length=spectrum_length, train=False)
-        test_ds = FusionDataset(test_samples, image_size=image_size, spectrum_length=spectrum_length, train=False)
+        train_ds = FusionDataset(train_samples, image_size=image_size, spectrum_length=spectrum_length, train=True,
+                                 spectrum_left=spectrum_left, spectrum_right=spectrum_right)
+        val_ds = FusionDataset(val_samples, image_size=image_size, spectrum_length=spectrum_length, train=False,
+                               spectrum_left=spectrum_left, spectrum_right=spectrum_right)
+        test_ds = FusionDataset(test_samples, image_size=image_size, spectrum_length=spectrum_length, train=False,
+                                spectrum_left=spectrum_left, spectrum_right=spectrum_right)
     else:
         raise ValueError(f"Unsupported task: {task}")
 
@@ -83,6 +92,8 @@ def save_experiment_config_snapshot(
             "root_dir": cfg.get("root_dir"),
             "image_size": cfg.get("image_size"),
             "spectrum_length": cfg.get("spectrum_length"),
+            "spectrum_left": cfg.get("spectrum_left"),
+            "spectrum_right": cfg.get("spectrum_right"),
             "val_ratio": cfg.get("val_ratio"),
             "test_ratio": cfg.get("test_ratio"),
             "strict_pair": cfg.get("strict_pair"),
@@ -157,14 +168,28 @@ def run_experiment(
     task = model_cfg["task"]
 
     if task in ["spectrum", "fusion"]:
+        spectrum_left = cfg.get("spectrum_left")
+        spectrum_right = cfg.get("spectrum_right")
         # 找到第一个包含光谱路径的样本
         for s in samples:
             if s.spectrum_path is not None:
                 # 读取该样本的原始光谱长度
                 df = pd.read_csv(s.spectrum_path)
+                x_col = df.iloc[:, 0].to_numpy()
                 orig_len = len(df.iloc[:, 1])
                 target_len = cfg["spectrum_length"]
-                print(f"\n[*] 训练初始化: 光谱长度将由 {orig_len} 转换为目标长度 {target_len}\n")
+                bound_info = ""
+                if spectrum_left is not None or spectrum_right is not None:
+                    l_str = str(spectrum_left) if spectrum_left is not None else str(x_col.min())
+                    r_str = str(spectrum_right) if spectrum_right is not None else str(x_col.max())
+                    mask = np.ones(orig_len, dtype=bool)
+                    if spectrum_left is not None:
+                        mask &= x_col >= spectrum_left
+                    if spectrum_right is not None:
+                        mask &= x_col <= spectrum_right
+                    cropped_len = int(mask.sum())
+                    bound_info = f", 截取范围=[{l_str}, {r_str}], 截取后长度={cropped_len}"
+                print(f"\n[*] 训练初始化: 原始光谱长度={orig_len}{bound_info}, 目标长度={target_len}\n")
                 break
 
     train_ds, val_ds, test_ds = prepare_datasets(cfg, task, samples, train_samples, val_samples, test_samples)

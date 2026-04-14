@@ -9,6 +9,8 @@ data:
   image_extensions: [".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"]
   image_size: 64
   spectrum_length: 1800
+  spectrum_left: 400       # 光谱左边界(横坐标)，null=不截取
+  spectrum_right: 2200      # 光谱右边界(横坐标)，null=不截取
   val_ratio: 0.2
   test_ratio: 0.1
   strict_pair: true

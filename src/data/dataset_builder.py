@@ -158,16 +158,28 @@ class ImageOnlyDataset(Dataset):
 
 
 class SpectrumOnlyDataset(Dataset):
-    def __init__(self, samples: List[SampleItem], spectrum_length: int):
+    def __init__(self, samples: List[SampleItem], spectrum_length: int,
+                 spectrum_left: float | None = None, spectrum_right: float | None = None):
         self.samples = [s for s in samples if s.spectrum_path is not None]
         self.spectrum_length = spectrum_length
+        self.spectrum_left = spectrum_left
+        self.spectrum_right = spectrum_right
 
     def __len__(self) -> int:
         return len(self.samples)
 
     def _read_spectrum(self, path: Path) -> torch.Tensor:
         df = pd.read_csv(path)
+        x_axis = df.iloc[:, 0].to_numpy(dtype=np.float32)
         arr = df.iloc[:, 1].to_numpy(dtype=np.float32)
+
+        # 按左右边界截取
+        mask = np.ones(len(arr), dtype=bool)
+        if self.spectrum_left is not None:
+            mask &= x_axis >= self.spectrum_left
+        if self.spectrum_right is not None:
+            mask &= x_axis <= self.spectrum_right
+        arr = arr[mask]
 
         if len(arr) != self.spectrum_length:
             # 原始数据的 x 坐标
@@ -191,9 +203,12 @@ class SpectrumOnlyDataset(Dataset):
 
 
 class FusionDataset(Dataset):
-    def __init__(self, samples: List[SampleItem], image_size: int, spectrum_length: int, train: bool = True):
+    def __init__(self, samples: List[SampleItem], image_size: int, spectrum_length: int, train: bool = True,
+                 spectrum_left: float | None = None, spectrum_right: float | None = None):
         self.samples = [s for s in samples if s.image_path is not None and s.spectrum_path is not None]
         self.spectrum_length = spectrum_length
+        self.spectrum_left = spectrum_left
+        self.spectrum_right = spectrum_right
 
         if train:
             self.img_tf = transforms.Compose(
@@ -216,14 +231,20 @@ class FusionDataset(Dataset):
 
     def _read_spectrum(self, path: Path) -> torch.Tensor:
         df = pd.read_csv(path)
+        x_axis = df.iloc[:, 0].to_numpy(dtype=np.float32)
         arr = df.iloc[:, 1].to_numpy(dtype=np.float32)
 
+        # 按左右边界截取
+        mask = np.ones(len(arr), dtype=bool)
+        if self.spectrum_left is not None:
+            mask &= x_axis >= self.spectrum_left
+        if self.spectrum_right is not None:
+            mask &= x_axis <= self.spectrum_right
+        arr = arr[mask]
+
         if len(arr) != self.spectrum_length:
-            # 原始数据的 x 坐标
             x_old = np.linspace(0, 1, len(arr))
-            # 目标长度的 x 坐标
             x_new = np.linspace(0, 1, self.spectrum_length)
-            # 通过线性插值得到新的 512 长度光谱
             arr = np.interp(x_new, x_old, arr).astype(np.float32)
 
         mean = arr.mean() if arr.size > 0 else 0.0
