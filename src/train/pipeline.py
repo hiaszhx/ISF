@@ -106,6 +106,7 @@ def save_experiment_config_snapshot(
             "image_model": model_cfg.get("image_model"),
             "spectrum_model": model_cfg.get("spectrum_model"),
             "fusion_model": model_cfg.get("fusion_model"),
+            "multiscale_info": model_cfg.get("multiscale_info"),
             "num_classes": model_cfg.get("num_classes"),
         },
         "train": {
@@ -212,6 +213,12 @@ def run_experiment(
         image_model = build_image_model(model_cfg["image_model"], num_classes)
         spectrum_model = build_spectrum_model(model_cfg["spectrum_model"], cfg["spectrum_length"], num_classes)
         model = build_fusion_model(model_cfg["fusion_model"], image_model, spectrum_model, num_classes)
+
+    # 打印多尺度融合信息
+    multiscale_info = getattr(model, "multiscale_info", None)
+    if multiscale_info:
+        print(f"\n[*] {multiscale_info}\n")
+        model_cfg["multiscale_info"] = multiscale_info
 
     device = torch.device("cuda" if torch.cuda.is_available() and train_cfg["device"] == "auto" else "cpu")
     model.to(device)

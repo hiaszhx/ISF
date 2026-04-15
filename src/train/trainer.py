@@ -84,6 +84,26 @@ def train_model(
     best_state_dict = None
     best_loss_state_dict = None
 
+    # Epoch 0: 未训练的初始评估
+    print("\n[Epoch 0 / 初始评估]")
+    init_train_loss, init_train_acc, _, _ = _run_epoch(
+        model, loaders["train"], criterion, None, device, train=False,
+        epoch=0, total_epochs=epochs,
+    )
+    init_val_loss, init_val_acc, _, _ = _run_epoch(
+        model, loaders["val"], criterion, None, device, train=False,
+        epoch=0, total_epochs=epochs,
+    )
+    history["train_loss"].append(init_train_loss)
+    history["train_acc"].append(init_train_acc)
+    history["val_loss"].append(init_val_loss)
+    history["val_acc"].append(init_val_acc)
+    print(
+        f"Epoch 0 (init) | "
+        f"train_loss={init_train_loss:.4f}, train_acc={init_train_acc:.4f}, "
+        f"val_loss={init_val_loss:.4f}, val_acc={init_val_acc:.4f}"
+    )
+
     for epoch in range(1, epochs + 1):
         print(f"\n[Epoch {epoch}/{epochs}]")
 
@@ -275,7 +295,7 @@ def save_results_figure(history: Dict[str, list], save_path: str | Path) -> None
     train_acc = history.get("train_acc", [])
     val_acc = history.get("val_acc", [])
 
-    epochs = np.arange(1, len(train_loss) + 1)
+    epochs = np.arange(0, len(train_loss))
     if len(epochs) == 0:
         return
 

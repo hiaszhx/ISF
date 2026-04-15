@@ -31,6 +31,7 @@ class SimpleCNN(nn.Module):
     def __init__(self, num_classes: int):
         super().__init__()
         self.feature_dim = 128
+        self.multiscale_dims = [32, 64, 128]
         self.features = nn.Sequential(
             nn.Conv2d(3, 32, kernel_size=3, padding=1),
             nn.ReLU(inplace=True),
@@ -49,6 +50,18 @@ class SimpleCNN(nn.Module):
         x = torch.flatten(x, 1)
         return x
 
+    def forward_multiscale_features(self, x: torch.Tensor) -> list[torch.Tensor]:
+        feats = []
+        for i, layer in enumerate(self.features):
+            x = layer(x)
+            if i == 2:   # 32 channels after first pool
+                feats.append(F.adaptive_avg_pool2d(x, (1, 1)).flatten(1))
+            elif i == 5: # 64 channels after second pool
+                feats.append(F.adaptive_avg_pool2d(x, (1, 1)).flatten(1))
+            elif i == 8: # 128 channels after adaptive pool
+                feats.append(x.flatten(1))
+        return feats
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.classifier(self.forward_features(x))
 
@@ -60,6 +73,7 @@ class ResNet18Classifier(nn.Module):
         m = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
         in_f = m.fc.in_features
         self.feature_dim = in_f
+        self.multiscale_dims = [64, 128, 512]
         m.fc = nn.Linear(in_f, num_classes)
         self.model = m
 
@@ -76,6 +90,20 @@ class ResNet18Classifier(nn.Module):
         x = torch.flatten(x, 1)
         return x
 
+    def forward_multiscale_features(self, x: torch.Tensor) -> list[torch.Tensor]:
+        x = self.model.conv1(x)
+        x = self.model.bn1(x)
+        x = self.model.relu(x)
+        x = self.model.maxpool(x)
+        x = self.model.layer1(x)
+        f1 = F.adaptive_avg_pool2d(x, (1, 1)).flatten(1)  # 64
+        x = self.model.layer2(x)
+        f2 = F.adaptive_avg_pool2d(x, (1, 1)).flatten(1)  # 128
+        x = self.model.layer3(x)
+        x = self.model.layer4(x)
+        f3 = F.adaptive_avg_pool2d(x, (1, 1)).flatten(1)  # 512
+        return [f1, f2, f3]
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         feat = self.forward_features(x)
         return self.model.fc(feat)
@@ -88,6 +116,7 @@ class MobileNetV2Classifier(nn.Module):
         m = models.mobilenet_v2(weights=models.MobileNet_V2_Weights.DEFAULT)
         in_f = m.classifier[1].in_features
         self.feature_dim = in_f
+        self.multiscale_dims = [24, 64, 1280]
         m.classifier[1] = nn.Linear(in_f, num_classes)
         self.model = m
 
@@ -96,6 +125,17 @@ class MobileNetV2Classifier(nn.Module):
         x = F.adaptive_avg_pool2d(x, (1, 1))
         x = torch.flatten(x, 1)
         return x
+
+    def forward_multiscale_features(self, x: torch.Tensor) -> list[torch.Tensor]:
+        feats = []
+        for i, block in enumerate(self.model.features):
+            x = block(x)
+            if i == 3:    # 24 channels
+                feats.append(F.adaptive_avg_pool2d(x, (1, 1)).flatten(1))
+            elif i == 10: # 64 channels
+                feats.append(F.adaptive_avg_pool2d(x, (1, 1)).flatten(1))
+        feats.append(F.adaptive_avg_pool2d(x, (1, 1)).flatten(1))  # 1280
+        return feats
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         feat = self.forward_features(x)
@@ -106,6 +146,7 @@ class ImageSpectraStyleClassifier(nn.Module):
     def __init__(self, num_classes: int, dropout_rate: float = 0.3):
         super().__init__()
         self.feature_dim = 256
+        self.multiscale_dims = [64, 128, 256]
 
         self.conv1 = nn.Conv2d(3, 64, kernel_size=7, padding=3)
         self.bn1 = nn.BatchNorm2d(64)
@@ -166,6 +207,16 @@ class ImageSpectraStyleClassifier(nn.Module):
         x = self.relu_fc2(self.bn_fc2(self.fc2(x)))
         x = self.dropout3(x)
         return x
+
+    def forward_multiscale_features(self, x: torch.Tensor) -> list[torch.Tensor]:
+        x = self.pool1(self.relu1(self.bn1(self.conv1(x))))
+        f1 = F.adaptive_avg_pool2d(x, (1, 1)).flatten(1)  # 64
+        x = self.pool2(self.relu2(self.bn2(self.conv2(x))))
+        f2 = F.adaptive_avg_pool2d(x, (1, 1)).flatten(1)  # 128
+        x = self.pool3(self.relu3(self.bn3(self.conv3(x))))
+        x = self.attention(x)
+        f3 = F.adaptive_avg_pool2d(x, (1, 1)).flatten(1)  # 256
+        return [f1, f2, f3]
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.classifier(self.forward_features(x))

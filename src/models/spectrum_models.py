@@ -49,6 +49,7 @@ class SpectrumCNN(nn.Module):
     def __init__(self, input_dim: int, num_classes: int):
         super().__init__()
         self.feature_dim = 64
+        self.multiscale_dims = [16, 32, 64]
         self.net = nn.Sequential(
             nn.Conv1d(1, 16, kernel_size=5, padding=2),
             nn.ReLU(inplace=True),
@@ -68,6 +69,19 @@ class SpectrumCNN(nn.Module):
         x = x.squeeze(-1)
         return x
 
+    def forward_multiscale_features(self, x: torch.Tensor) -> list[torch.Tensor]:
+        x = x.unsqueeze(1)
+        feats = []
+        for i, layer in enumerate(self.net):
+            x = layer(x)
+            if i == 2:   # 16 channels after first pool
+                feats.append(F.adaptive_avg_pool1d(x, 1).flatten(1))
+            elif i == 5: # 32 channels after second pool
+                feats.append(F.adaptive_avg_pool1d(x, 1).flatten(1))
+            elif i == 8: # 64 channels after adaptive pool
+                feats.append(x.flatten(1))
+        return feats
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.classifier(self.forward_features(x))
 
@@ -76,6 +90,7 @@ class SpectraNetClassifier(nn.Module):
     def __init__(self, input_dim: int, num_classes: int, dropout_rate: float = 0.3):
         super().__init__()
         self.feature_dim = 256
+        self.multiscale_dims = [64, 128, 256]
 
         self.conv1 = nn.Conv1d(1, 64, kernel_size=7, padding=3)
         self.bn1 = nn.BatchNorm1d(64)
@@ -139,6 +154,18 @@ class SpectraNetClassifier(nn.Module):
         x = self.relu_fc2(self.bn_fc2(self.fc2(x)))
         x = self.dropout3(x)
         return x
+
+    def forward_multiscale_features(self, x: torch.Tensor) -> list[torch.Tensor]:
+        if x.dim() == 2:
+            x = x.unsqueeze(1)
+        x = self.pool1(self.relu1(self.bn1(self.conv1(x))))
+        f1 = F.adaptive_avg_pool1d(x, 1).flatten(1)  # 64
+        x = self.pool2(self.relu2(self.bn2(self.conv2(x))))
+        f2 = F.adaptive_avg_pool1d(x, 1).flatten(1)  # 128
+        x = self.pool3(self.relu3(self.bn3(self.conv3(x))))
+        x = self.attention(x)
+        f3 = F.adaptive_avg_pool1d(x, 1).flatten(1)  # 256
+        return [f1, f2, f3]
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.classifier(self.forward_features(x))
@@ -379,6 +406,7 @@ class GADFSpectrumClassifier(nn.Module):
     ) -> None:
         super().__init__()
         self.feature_dim = 256
+        self.multiscale_dims = [64, 128, 256]
         self.image_size = image_size
 
         self.gadf = GADFTransform(image_size)
@@ -444,6 +472,17 @@ class GADFSpectrumClassifier(nn.Module):
         x = self.dropout3(x)
         return x
 
+    def forward_multiscale_features(self, x: torch.Tensor) -> list[torch.Tensor]:
+        img = self.gadf(x)
+        x = self.pool1(self.relu1(self.bn1(self.conv1(img))))
+        f1 = F.adaptive_avg_pool2d(x, (1, 1)).flatten(1)  # 64
+        x = self.pool2(self.relu2(self.bn2(self.conv2(x))))
+        f2 = F.adaptive_avg_pool2d(x, (1, 1)).flatten(1)  # 128
+        x = self.pool3(self.relu3(self.bn3(self.conv3(x))))
+        x = self.attention(x)
+        f3 = F.adaptive_avg_pool2d(x, (1, 1)).flatten(1)  # 256
+        return [f1, f2, f3]
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.classifier(self.forward_features(x))
 
@@ -478,6 +517,7 @@ class GADFMambaSpectrumClassifier(nn.Module):
     ) -> None:
         super().__init__()
         self.feature_dim = 256
+        self.multiscale_dims = [64, 128, 256]
         self.image_size = image_size
 
         self.gadf = GADFTransform(image_size)
@@ -552,6 +592,19 @@ class GADFMambaSpectrumClassifier(nn.Module):
         x = self.relu_fc2(self.bn_fc2(self.fc2(x)))
         x = self.dropout3(x)
         return x
+
+    def forward_multiscale_features(self, x: torch.Tensor) -> list[torch.Tensor]:
+        img = self.gadf(x)
+        x = self.pool1(self.relu1(self.bn1(self.conv1(img))))
+        f1 = F.adaptive_avg_pool2d(x, (1, 1)).flatten(1)  # 64
+        x = self.pool2(self.relu2(self.bn2(self.conv2(x))))
+        f2 = F.adaptive_avg_pool2d(x, (1, 1)).flatten(1)  # 128
+        x = self.pool3(self.relu3(self.bn3(self.conv3(x))))
+        x = self.mamba(x)
+        if self.attention is not None:
+            x = self.attention(x)
+        f3 = F.adaptive_avg_pool2d(x, (1, 1)).flatten(1)  # 256
+        return [f1, f2, f3]
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.classifier(self.forward_features(x))
