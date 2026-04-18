@@ -134,8 +134,19 @@ class ImageOnlyDataset(Dataset):
             self.tf = transforms.Compose(
                 [
                     transforms.CenterCrop((image_size, image_size)),
-                    transforms.RandomHorizontalFlip(),
+                    transforms.RandomRotation(10),  # 随机旋转，增强几何不变性
+                    transforms.ColorJitter(
+                        brightness=0.2, contrast=0.2,
+                        saturation=0.1, hue=0.02,
+                    ),   #随机调整亮度(±0.2)、对比度(±0.2)、饱和度(±0.1)、色调(±0.02)，增强光照鲁棒性
+                    transforms.RandomHorizontalFlip(),  #随机水平翻转
+                    transforms.RandomVerticalFlip(),    #随机垂直翻转
+                    transforms.RandomApply(
+                        [transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 1.0))],
+                        p=0.2,
+                    ),   #20% 概率施加高斯模糊(kernel=3)，模拟成像模糊
                     transforms.ToTensor(),
+                    transforms.RandomErasing(p=0.15, scale=(0.02, 0.15)),  #15% 概率随机擦除图像局部区域(2%~15%面积)，类似 Cutout，防止过拟合
                 ]
             )
         else:
@@ -214,8 +225,19 @@ class FusionDataset(Dataset):
             self.img_tf = transforms.Compose(
                 [
                     transforms.CenterCrop((image_size, image_size)),
+                    transforms.RandomRotation(10),
+                    transforms.ColorJitter(
+                        brightness=0.2, contrast=0.2,
+                        saturation=0.1, hue=0.02,
+                    ),
                     transforms.RandomHorizontalFlip(),
+                    transforms.RandomVerticalFlip(),
+                    transforms.RandomApply(
+                        [transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 1.0))],
+                        p=0.2,
+                    ),
                     transforms.ToTensor(),
+                    transforms.RandomErasing(p=0.15, scale=(0.02, 0.15)),
                 ]
             )
         else:
