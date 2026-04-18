@@ -17,3 +17,4 @@ configs/image96_128.yaml
 configs/image128_64.yaml
 configs/image128_128.yaml
 plot_spectra.py
+export_feature_maps.py

@@ -238,6 +238,16 @@ def run_experiment(
 
     save_dir = ensure_dir(Path(output_dir or "outputs") / run_name / task)
 
+    # ---- 保存权重文件 ----
+    weights_dir = ensure_dir(save_dir / "weights")
+    if train_result.best_state_dict is not None:
+        torch.save(train_result.best_state_dict, weights_dir / "best_acc.pth")
+    if train_result.best_loss_state_dict is not None:
+        torch.save(train_result.best_loss_state_dict, weights_dir / "best_loss.pth")
+    if train_result.last_state_dict is not None:
+        torch.save(train_result.last_state_dict, weights_dir / "last.pth")
+    print(f"\n[*] 权重已保存至 {weights_dir}")
+
     # ---- 保存训练曲线 ----
     save_results_figure(train_result.history, save_dir / "results.png")
 
