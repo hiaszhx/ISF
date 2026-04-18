@@ -39,7 +39,8 @@ train:
 
 model:
   image_model: mobilenetv2      # simple_cnn | resnet18 | mobilenetv2 | image_attn
-  spectrum_model: gadf_cnn_64 # spectrum_cnn | spectrum_mlp | spectranet_attn | gadf_cnn_64 | gadf_cnn_128
+  spectrum_model: gadf_mobilenetv2_64 # spectrum_cnn | spectrum_mlp | spectranet_attn | gadf_cnn_64 | gadf_cnn_128
                               # gadf_mamba_64 | gadf_mamba_128 | gadf_mamba_attn_64 | gadf_mamba_attn_128
+                              # gadf_mobilenetv2_64 | gadf_mobilenetv2_128
   fusion_model: multiscale_fusion # concat_fusion | cross_attention_fusion | multiscale_fusion
   num_classes: auto

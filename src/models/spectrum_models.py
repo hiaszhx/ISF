@@ -610,6 +610,54 @@ class GADFMambaSpectrumClassifier(nn.Module):
         return self.classifier(self.forward_features(x))
 
 
+class GADFMobileNetV2SpectrumClassifier(nn.Module):
+    """GADF + MobileNetV2 光谱分类器。
+
+    将 1D 光谱在线转换为 GADF 图像（单通道），扩展为 3 通道后
+    送入预训练 MobileNetV2 进行特征提取和分类。
+
+    Args:
+        input_dim:   原始光谱长度
+        num_classes: 类别数
+        image_size:  GADF 图像边长，64 或 128
+    """
+
+    def __init__(self, input_dim: int, num_classes: int, image_size: int = 64) -> None:
+        super().__init__()
+        from torchvision import models
+
+        self.gadf = GADFTransform(image_size)
+
+        m = models.mobilenet_v2(weights=models.MobileNet_V2_Weights.DEFAULT)
+        self.features = m.features
+        in_f = m.classifier[1].in_features  # 1280
+        self.feature_dim = in_f
+        self.multiscale_dims = [24, 64, 1280]
+        self.classifier = nn.Linear(in_f, num_classes)
+
+    def forward_features(self, x: torch.Tensor) -> torch.Tensor:
+        img = self.gadf(x)                        # (B, 1, N, N)
+        img = img.expand(-1, 3, -1, -1)           # (B, 3, N, N)
+        x = self.features(img)
+        x = F.adaptive_avg_pool2d(x, (1, 1)).flatten(1)
+        return x
+
+    def forward_multiscale_features(self, x: torch.Tensor) -> list[torch.Tensor]:
+        img = self.gadf(x).expand(-1, 3, -1, -1)
+        feats = []
+        for i, block in enumerate(self.features):
+            img = block(img)
+            if i == 3:     # 24 channels
+                feats.append(F.adaptive_avg_pool2d(img, (1, 1)).flatten(1))
+            elif i == 10:  # 64 channels
+                feats.append(F.adaptive_avg_pool2d(img, (1, 1)).flatten(1))
+        feats.append(F.adaptive_avg_pool2d(img, (1, 1)).flatten(1))  # 1280
+        return feats
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.classifier(self.forward_features(x))
+
+
 def build_spectrum_model(name: str, input_dim: int, num_classes: int) -> nn.Module:
     name = name.lower()
     if name == "spectrum_mlp":
@@ -630,4 +678,8 @@ def build_spectrum_model(name: str, input_dim: int, num_classes: int) -> nn.Modu
         return GADFMambaSpectrumClassifier(input_dim, num_classes, image_size=64, use_attention=True)
     if name == "gadf_mamba_attn_128":
         return GADFMambaSpectrumClassifier(input_dim, num_classes, image_size=128, use_attention=True)
+    if name == "gadf_mobilenetv2_64":
+        return GADFMobileNetV2SpectrumClassifier(input_dim, num_classes, image_size=64)
+    if name == "gadf_mobilenetv2_128":
+        return GADFMobileNetV2SpectrumClassifier(input_dim, num_classes, image_size=128)
     raise ValueError(f"Unsupported spectrum model: {name}")
